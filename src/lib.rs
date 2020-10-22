@@ -14,170 +14,143 @@ use std::{
     },
 };
 
+pub mod pool;
+pub mod bytes;
+
 #[derive(Clone, Debug)]
-pub struct Bytes {
-    inner: Arc<Inner>,
+pub struct Shared<T> {
+    inner: Arc<Inner<T>>,
 }
 
 #[derive(Debug)]
-struct Inner {
-    entry: ptr::NonNull<Entry>,
-    pool_head: Arc<PoolHead>,
+struct Inner<T> {
+    entry: ptr::NonNull<Entry<T>>,
+    pool_head: Arc<PoolHead<T>>,
 }
 
 #[derive(Debug)]
-struct PoolHead {
+struct PoolHead<T> {
     is_detached: AtomicBool,
-    head: AtomicPtr<Entry>,
+    head: AtomicPtr<Entry<T>>,
 }
 
 #[derive(Debug)]
-struct Entry {
-    bytes: Vec<u8>,
-    next: Option<ptr::NonNull<Entry>>,
+struct Entry<T> {
+    value: T,
+    next: Option<ptr::NonNull<Entry<T>>>,
 }
 
-impl AsRef<[u8]> for Bytes {
+impl<T> AsRef<T> for Shared<T> {
     #[inline]
-    fn as_ref(&self) -> &[u8] {
+    fn as_ref(&self) -> &T {
         unsafe {
-            &self.inner.entry.as_ref().bytes
+            &self.inner.entry.as_ref().value
         }
     }
 }
 
-impl Deref for Bytes {
-    type Target = [u8];
+impl<T> Deref for Shared<T> {
+    type Target = T;
 
     #[inline]
-    fn deref(&self) -> &[u8] {
+    fn deref(&self) -> &T {
         self.as_ref()
     }
 }
 
-impl PartialEq for Bytes {
-    fn eq(&self, other: &Bytes) -> bool {
+impl<T> PartialEq for Shared<T> where T: PartialEq {
+    fn eq(&self, other: &Shared<T>) -> bool {
         self.as_ref() == other.as_ref()
     }
 }
 
-#[derive(Debug)]
-pub struct BytesMut {
-    inner: Inner,
+impl<T> PartialEq<T> for Shared<T> where T: PartialEq {
+    fn eq(&self, other: &T) -> bool {
+        self.as_ref() == other
+    }
 }
 
-impl BytesMut {
-    pub fn new_detached() -> BytesMut {
-        BytesMut { inner: Inner::new_detached(), }
+#[derive(Debug)]
+pub struct Unique<T> {
+    inner: Inner<T>,
+}
+
+impl<T> Unique<T> {
+    pub fn new_detached(value: T) -> Self {
+        Self { inner: Inner::new_detached(value), }
     }
 
-    pub fn freeze(self) -> Bytes {
-        Bytes {
+    pub fn freeze(self) -> Shared<T> {
+        Shared {
             inner: Arc::new(self.inner),
         }
     }
 }
 
-impl Inner {
-    fn new(pool_head: Arc<PoolHead>) -> Inner {
-        let entry_box = Box::new(Entry { bytes: Vec::new(), next: None, });
+impl<T> Inner<T> {
+    fn new(value: T, pool_head: Arc<PoolHead<T>>) -> Inner<T> {
+        let entry_box = Box::new(Entry { value, next: None, });
         let entry = unsafe {
             ptr::NonNull::new_unchecked(Box::into_raw(entry_box))
         };
         Inner { entry, pool_head, }
     }
 
-    fn new_detached() -> Inner {
-        Inner::new(Arc::new(PoolHead {
+    fn new_detached(value: T) -> Inner<T> {
+        Inner::new(value, Arc::new(PoolHead {
             is_detached: AtomicBool::new(true),
             head: AtomicPtr::new(ptr::null_mut()),
         }))
     }
 }
 
-impl AsRef<[u8]> for BytesMut {
+impl<T> AsRef<T> for Unique<T> {
     #[inline]
-    fn as_ref(&self) -> &[u8] {
+    fn as_ref(&self) -> &T {
         unsafe {
-            &self.inner.entry.as_ref().bytes
+            &self.inner.entry.as_ref().value
         }
     }
 }
 
-impl Deref for BytesMut {
-    type Target = Vec<u8>;
+impl<T> Deref for Unique<T> {
+    type Target = T;
 
     #[inline]
-    fn deref(&self) -> &Vec<u8> {
-        unsafe {
-            &self.inner.entry.as_ref().bytes
-        }
+    fn deref(&self) -> &T {
+        self.as_ref()
     }
 }
 
-impl AsMut<[u8]> for BytesMut {
-    fn as_mut(&mut self) -> &mut [u8] {
-        unsafe {
-            &mut self.inner.entry.as_mut().bytes
-        }
-    }
-}
-
-impl DerefMut for BytesMut {
+impl<T> AsMut<T> for Unique<T> {
     #[inline]
-    fn deref_mut(&mut self) -> &mut Vec<u8> {
+    fn as_mut(&mut self) -> &mut T {
         unsafe {
-            &mut self.inner.entry.as_mut().bytes
+            &mut self.inner.entry.as_mut().value
         }
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Pool {
-    inner: Arc<PoolHead>,
-}
-
-impl Pool {
-    pub fn new() -> Pool {
-        Pool {
-            inner: Arc::new(PoolHead {
-                is_detached: AtomicBool::new(false),
-                head: AtomicPtr::new(ptr::null_mut()),
-            }),
-        }
-    }
-
-    pub fn lend(&self) -> BytesMut {
-        unsafe {
-            let mut head = self.inner.head.load(Ordering::SeqCst);
-            loop {
-                if head.is_null() {
-                    return BytesMut { inner: Inner::new(self.inner.clone()), };
-                }
-                let entry_ptr = ptr::NonNull::new_unchecked(head);
-                let next_head = match entry_ptr.as_ref().next {
-                    None =>
-                        ptr::null_mut(),
-                    Some(non_null) =>
-                        non_null.as_ptr(),
-                };
-                match self.inner.head.compare_exchange(head, next_head, Ordering::SeqCst, Ordering::Relaxed) {
-                    Ok(..) =>
-                        return BytesMut {
-                            inner: Inner {
-                                entry: entry_ptr,
-                                pool_head: self.inner.clone(),
-                            },
-                        },
-                    Err(value) =>
-                        head = value,
-                }
-            }
-        }
+impl<T> DerefMut for Unique<T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut T {
+        self.as_mut()
     }
 }
 
-impl Drop for Inner {
+impl<T> PartialEq for Unique<T> where T: PartialEq {
+    fn eq(&self, other: &Unique<T>) -> bool {
+        self.as_ref() == other.as_ref()
+    }
+}
+
+impl<T> PartialEq<T> for Unique<T> where T: PartialEq {
+    fn eq(&self, other: &T) -> bool {
+        self.as_ref() == other
+    }
+}
+
+impl<T> Drop for Inner<T> {
     fn drop(&mut self) {
         unsafe {
             let mut head = self.pool_head.head.load(Ordering::SeqCst);
@@ -203,7 +176,7 @@ impl Drop for Inner {
     }
 }
 
-impl Drop for PoolHead {
+impl<T> Drop for PoolHead<T> {
     fn drop(&mut self) {
         unsafe {
             // forbid entries list append
@@ -229,5 +202,49 @@ impl Drop for PoolHead {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::mem::drop;
+
+    use super::{
+        pool::Pool,
+    };
+
+    #[test]
+    fn basic() {
+        let pool: Pool<&'static str> = Pool::new();
+
+        let sample_a = "hello, world!";
+        let sample_b = "goodbye, world!";
+
+        let mut was_built = false;
+        let value = pool.lend(|| { was_built = true; sample_a });
+        assert_eq!(value, sample_a);
+        assert_eq!(was_built, true);
+
+        drop(value);
+        was_built = false;
+        let value_a = pool.lend(|| { was_built = true; sample_b });
+        assert_eq!(value_a, sample_a);
+        assert_eq!(was_built, false);
+
+        let value_b = pool.lend(|| { was_built = true; sample_b });
+        assert_eq!(value_b, sample_b);
+        assert_eq!(was_built, true);
+
+        let value_a_shared = value_a.freeze();
+        assert_eq!(value_a_shared, sample_a);
+        let value_a_shared_cloned = value_a_shared.clone();
+        assert_eq!(value_a_shared_cloned, sample_a);
+
+        drop(value_a_shared);
+        drop(value_a_shared_cloned);
+        was_built = false;
+        let value_a = pool.lend(|| { was_built = true; sample_b });
+        assert_eq!(value_a, sample_a);
+        assert_eq!(was_built, false);
     }
 }
