@@ -1,8 +1,8 @@
 [package]
-name = "ero-blockwheel-alloc"
+name = "alloc-pool"
 version = "0.2.0"
 authors = ["Alexey Voznyuk <me@swizard.info>"]
-description = "Allocation tools for `ero-blockwheel` framework."
+description = "Cache pool for objects which are expensive for allocation."
 edition = "2018"
 
 [dependencies]
