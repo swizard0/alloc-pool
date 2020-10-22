@@ -1,0 +1,8 @@
+[package]
+name = "ero-blockwheel-alloc"
+version = "0.1.0"
+authors = ["Alexey Voznyuk <me@swizard.info>"]
+description = "Allocation tools for `ero-blockwheel` framework."
+edition = "2018"
+
+[dependencies]
