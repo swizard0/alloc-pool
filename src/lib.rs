@@ -17,9 +17,15 @@ use std::{
 pub mod pool;
 pub mod bytes;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Shared<T> {
     inner: Arc<Inner<T>>,
+}
+
+impl<T> Clone for Shared<T> {
+    fn clone(&self) -> Shared<T> {
+        Shared { inner: self.inner.clone(), }
+    }
 }
 
 #[derive(Debug)]
@@ -207,7 +213,16 @@ impl<T> Drop for PoolHead<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::mem::drop;
+    use std::{
+        mem::drop,
+        sync::{
+            Arc,
+            atomic::{
+                Ordering,
+                AtomicUsize,
+            },
+        },
+    };
 
     use super::{
         pool::Pool,
@@ -215,36 +230,57 @@ mod tests {
 
     #[test]
     fn basic() {
-        let pool: Pool<&'static str> = Pool::new();
+        let mut make_counter = 0;
+        let drop_counter = Arc::new(AtomicUsize::new(0));
+
+        #[derive(Debug)]
+        struct Sample {
+            contents: &'static str,
+            drop_counter: Arc<AtomicUsize>,
+        }
+
+        impl Drop for Sample {
+            fn drop(&mut self) {
+                self.drop_counter.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let pool = Pool::new();
 
         let sample_a = "hello, world!";
         let sample_b = "goodbye, world!";
 
-        let mut was_built = false;
-        let value = pool.lend(|| { was_built = true; sample_a });
-        assert_eq!(value, sample_a);
-        assert_eq!(was_built, true);
+        let value = pool.lend(|| { make_counter += 1; Sample { contents: sample_a, drop_counter: drop_counter.clone(), } });
+        assert_eq!(value.contents, sample_a);
+        assert_eq!(make_counter, 1);
 
         drop(value);
-        was_built = false;
-        let value_a = pool.lend(|| { was_built = true; sample_b });
-        assert_eq!(value_a, sample_a);
-        assert_eq!(was_built, false);
+        assert_eq!(drop_counter.load(Ordering::SeqCst), 0);
 
-        let value_b = pool.lend(|| { was_built = true; sample_b });
-        assert_eq!(value_b, sample_b);
-        assert_eq!(was_built, true);
+        let value_a = pool.lend(|| { make_counter += 1; Sample { contents: sample_b, drop_counter: drop_counter.clone(), } });
+        assert_eq!(value_a.contents, sample_a);
+        assert_eq!(make_counter, 1);
+
+        let value_b = pool.lend(|| { make_counter += 1; Sample { contents: sample_b, drop_counter: drop_counter.clone(), } });
+        assert_eq!(value_b.contents, sample_b);
+        assert_eq!(make_counter, 2);
 
         let value_a_shared = value_a.freeze();
-        assert_eq!(value_a_shared, sample_a);
+        assert_eq!(value_a_shared.contents, sample_a);
         let value_a_shared_cloned = value_a_shared.clone();
-        assert_eq!(value_a_shared_cloned, sample_a);
+        assert_eq!(value_a_shared_cloned.contents, sample_a);
 
         drop(value_a_shared);
         drop(value_a_shared_cloned);
-        was_built = false;
-        let value_a = pool.lend(|| { was_built = true; sample_b });
-        assert_eq!(value_a, sample_a);
-        assert_eq!(was_built, false);
+        assert_eq!(drop_counter.load(Ordering::SeqCst), 0);
+
+        let value_a = pool.lend(|| { make_counter += 1; Sample { contents: sample_b, drop_counter: drop_counter.clone(), } });
+        assert_eq!(value_a.contents, sample_a);
+        assert_eq!(make_counter, 2);
+
+        drop(value_a);
+        drop(value_b);
+        drop(pool);
+        assert_eq!(drop_counter.load(Ordering::SeqCst), make_counter);
     }
 }
