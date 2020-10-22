@@ -132,6 +132,51 @@ impl DerefMut for BytesMut {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct Pool {
+    inner: Arc<PoolHead>,
+}
+
+impl Pool {
+    pub fn new() -> Pool {
+        Pool {
+            inner: Arc::new(PoolHead {
+                is_detached: AtomicBool::new(false),
+                head: AtomicPtr::new(ptr::null_mut()),
+            }),
+        }
+    }
+
+    pub fn lend(&self) -> BytesMut {
+        unsafe {
+            let mut head = self.inner.head.load(Ordering::SeqCst);
+            loop {
+                if head.is_null() {
+                    return BytesMut { inner: Inner::new(self.inner.clone()), };
+                }
+                let entry_ptr = ptr::NonNull::new_unchecked(head);
+                let next_head = match entry_ptr.as_ref().next {
+                    None =>
+                        ptr::null_mut(),
+                    Some(non_null) =>
+                        non_null.as_ptr(),
+                };
+                match self.inner.head.compare_exchange(head, next_head, Ordering::SeqCst, Ordering::Relaxed) {
+                    Ok(..) =>
+                        return BytesMut {
+                            inner: Inner {
+                                entry: entry_ptr,
+                                pool_head: self.inner.clone(),
+                            },
+                        },
+                    Err(value) =>
+                        head = value,
+                }
+            }
+        }
+    }
+}
+
 impl Drop for Inner {
     fn drop(&mut self) {
         unsafe {
@@ -160,13 +205,13 @@ impl Drop for Inner {
 
 impl Drop for PoolHead {
     fn drop(&mut self) {
-        // forbid entries list append
-        self.is_detached.store(true, Ordering::SeqCst);
+        unsafe {
+            // forbid entries list append
+            self.is_detached.store(true, Ordering::SeqCst);
 
-        // drop entries
-        let mut head = self.head.load(Ordering::SeqCst);
-        while !head.is_null() {
-            unsafe {
+            // drop entries
+            let mut head = self.head.load(Ordering::SeqCst);
+            while !head.is_null() {
                 let entry_ptr = ptr::NonNull::new_unchecked(head);
                 let next_head = match entry_ptr.as_ref().next {
                     None =>
@@ -175,8 +220,10 @@ impl Drop for PoolHead {
                         non_null.as_ptr(),
                 };
                 match self.head.compare_exchange(head, next_head, Ordering::SeqCst, Ordering::Relaxed) {
-                    Ok(..) =>
-                        head = next_head,
+                    Ok(..) => {
+                        let _entry = Box::from_raw(entry_ptr.as_ptr());
+                        head = next_head;
+                    },
                     Err(value) =>
                         head = value,
                 }
