@@ -162,11 +162,13 @@ unsafe impl<T> Sync for Inner<T> where T: Sync {}
 impl<T> Drop for Inner<T> {
     fn drop(&mut self) {
         unsafe {
+            println!(" ;; dropping block entry = {:?} ... ", self.entry);
             let mut head = self.pool_head.head.load(Ordering::SeqCst);
             loop {
                 if self.pool_head.is_detached.load(Ordering::SeqCst) {
                     // pool is detached, terminate reenqueue process and drop entry
                     let _entry = Box::from_raw(self.entry.as_ptr());
+                    println!(" ;; DROPPED block entry = {:?} because of detached load", self.entry);
                     break;
                 }
                 self.entry.as_mut().next = if head.is_null() {
@@ -175,8 +177,10 @@ impl<T> Drop for Inner<T> {
                     Some(ptr::NonNull::new_unchecked(head))
                 };
                 match self.pool_head.head.compare_exchange(head, self.entry.as_ptr(), Ordering::SeqCst, Ordering::Relaxed) {
-                    Ok(..) =>
-                        break,
+                    Ok(..) => {
+                        println!(" ;; DROPPED block entry = {:?} (returned to queue)", self.entry);
+                        break;
+                    },
                     Err(value) =>
                         head = value,
                 }
