@@ -156,6 +156,9 @@ impl<T> PartialEq<T> for Unique<T> where T: PartialEq {
     }
 }
 
+unsafe impl<T> Send for Inner<T> where T: Send {}
+unsafe impl<T> Sync for Inner<T> where T: Sync {}
+
 impl<T> Drop for Inner<T> {
     fn drop(&mut self) {
         unsafe {
@@ -226,6 +229,7 @@ mod tests {
 
     use super::{
         pool::Pool,
+        bytes::BytesPool,
     };
 
     #[test]
@@ -282,5 +286,15 @@ mod tests {
         drop(value_b);
         drop(pool);
         assert_eq!(drop_counter.load(Ordering::SeqCst), make_counter);
+    }
+
+    #[test]
+    fn bytes_pool_send_sync() {
+        let pool = BytesPool::new();
+        let bytes = pool.lend();
+
+        std::thread::spawn(move || {
+            let _bytes = bytes.freeze();
+        });
     }
 }
