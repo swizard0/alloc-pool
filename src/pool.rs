@@ -39,23 +39,20 @@ impl<T> Pool<T> {
 
     pub fn lend<F>(&self, make_value: F) -> Unique<T> where F: FnOnce() -> T {
         println!(" ;; requesting LEND ... ");
-        unsafe {
-            let mut head = self.inner.head.load(Ordering::SeqCst);
-            loop {
-                if head.is_null() {
-                    println!(" ;; LEND done: NEW forced (empty queue)");
-                    return Unique { inner: Inner::new(make_value(), self.inner.clone()), };
-                }
-                let entry_ptr = ptr::NonNull::new_unchecked(head);
-                let next_head = match entry_ptr.as_ref().next {
+        let head = self.inner.head.load(Ordering::SeqCst);
+        let mut maybe_entry_ptr = ptr::NonNull::new(head);
+        loop {
+            if let Some(mut entry_ptr) = maybe_entry_ptr {
+                let next_head = match unsafe { entry_ptr.as_ref().next } {
                     None =>
                         ptr::null_mut(),
                     Some(non_null) =>
                         non_null.as_ptr(),
                 };
-                match self.inner.head.compare_exchange(head, next_head, Ordering::SeqCst, Ordering::Relaxed) {
+                match self.inner.head.compare_exchange(entry_ptr.as_ptr(), next_head, Ordering::SeqCst, Ordering::Relaxed) {
                     Ok(..) => {
-                        println!(" ;; LEND done: retrieved from queue: {:?} (next_head = {:?}", entry_ptr, next_head);
+                        println!(" ;; LEND done: retrieved from queue: {:?} (next_head = {:?})", entry_ptr, next_head);
+                        unsafe { entry_ptr.as_mut().next = None; }
                         return Unique {
                             inner: Inner {
                                 entry: entry_ptr,
@@ -63,11 +60,12 @@ impl<T> Pool<T> {
                             },
                         };
                     },
-                    Err(value) => {
-                        println!(" ;; LEND conflict: {:?} != {:?}, trying again", head, value);
-                        head = value;
-                    },
+                    Err(next_ptr) =>
+                        maybe_entry_ptr = ptr::NonNull::new(next_ptr),
                 }
+            } else {
+                println!(" ;; LEND done: NEW forced (empty queue)");
+                return Unique { inner: Inner::new(make_value(), self.inner.clone()), };
             }
         }
     }
