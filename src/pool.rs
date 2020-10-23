@@ -16,9 +16,15 @@ use super::{
     PoolHead,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Pool<T> {
     inner: Arc<PoolHead<T>>,
+}
+
+impl<T> Clone for Pool<T> {
+    fn clone(&self) -> Pool<T> {
+        Pool { inner: self.inner.clone(), }
+    }
 }
 
 impl<T> Pool<T> {
