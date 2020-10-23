@@ -19,6 +19,8 @@ impl BytesPool {
     }
 
     pub fn lend(&self) -> BytesMut {
-        self.pool.lend(Vec::new)
+        let mut bytes = self.pool.lend(Vec::new);
+        bytes.clear();
+        bytes
     }
 }
