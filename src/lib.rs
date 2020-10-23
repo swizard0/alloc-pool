@@ -54,7 +54,6 @@ struct Entry<T> {
 impl<T> AsRef<T> for Shared<T> {
     #[inline]
     fn as_ref(&self) -> &T {
-        println!("  ;;; accessing Shared::as_ref for {:?}", self.inner.entry);
         unsafe {
             &self.inner.entry.as_ref().value
         }
@@ -98,7 +97,6 @@ impl<T> Inner<T> {
     fn new(value: T, pool_head: Arc<PoolHead<T>>) -> Inner<T> {
         let entry_box = Box::new(Entry { value, next: None, });
         let entry = ptr::NonNull::from(Box::leak(entry_box));
-        println!("  ;;; created new {:?}", entry);
         Inner { entry, pool_head, }
     }
 
@@ -113,7 +111,6 @@ impl<T> Inner<T> {
 impl<T> AsRef<T> for Unique<T> {
     #[inline]
     fn as_ref(&self) -> &T {
-        println!("  ;;; accessing Unique::as_ref for {:?}", self.inner.entry);
         unsafe {
             &self.inner.entry.as_ref().value
         }
@@ -132,7 +129,6 @@ impl<T> Deref for Unique<T> {
 impl<T> AsMut<T> for Unique<T> {
     #[inline]
     fn as_mut(&mut self) -> &mut T {
-        println!("  ;;; accessing Unique::as_mut for {:?}", self.inner.entry);
         unsafe {
             &mut self.inner.entry.as_mut().value
         }
@@ -163,27 +159,20 @@ unsafe impl<T> Sync for Inner<T> where T: Sync {}
 
 impl<T> Drop for Inner<T> {
     fn drop(&mut self) {
-        println!(" ;; dropping block entry = {:?} ... ", self.entry);
         let mut head = self.pool_head.head.load(Ordering::SeqCst);
         loop {
             if self.pool_head.is_detached.load(Ordering::SeqCst) {
                 // pool is detached, terminate reenqueue process and drop entry
                 let _entry = unsafe { Box::from_raw(self.entry.as_ptr()) };
-                println!(" ;; DROPPED block entry = {:?} because of detached load", self.entry);
                 break;
             }
             let next = ptr::NonNull::new(head);
             unsafe { self.entry.as_mut().next = next; }
             match self.pool_head.head.compare_exchange(head, self.entry.as_ptr(), Ordering::SeqCst, Ordering::Relaxed) {
-                Ok(..) => {
-                    let next = unsafe { self.entry.as_mut().next };
-                    println!(" ;; DROPPED block entry = {:?} (next = {:?}) (returned to queue)", self.entry, next);
-                    break;
-                },
-                Err(value) => {
-                    println!(" ;; dropping conflict: {:?} != {:?}, trying again", head, value);
-                    head = value;
-                },
+                Ok(..) =>
+                    break,
+                Err(value) =>
+                    head = value,
             }
         }
     }
@@ -191,7 +180,6 @@ impl<T> Drop for Inner<T> {
 
 impl<T> Drop for PoolHead<T> {
     fn drop(&mut self) {
-        println!(" ;; dropping PoolHead");
         // forbid entries list append
         self.is_detached.store(true, Ordering::SeqCst);
 
@@ -217,7 +205,6 @@ impl<T> Drop for PoolHead<T> {
             };
             maybe_entry_ptr = ptr::NonNull::new(next_ptr);
         }
-        println!(" ;; DROPPED PoolHead");
     }
 }
 
