@@ -38,10 +38,12 @@ impl<T> Pool<T> {
     }
 
     pub fn lend<F>(&self, make_value: F) -> Unique<T> where F: FnOnce() -> T {
+        println!(" ;; requesting LEND ... ");
         unsafe {
             let mut head = self.inner.head.load(Ordering::SeqCst);
             loop {
                 if head.is_null() {
+                    println!(" ;; LEND done: NEW forced (empty queue)");
                     return Unique { inner: Inner::new(make_value(), self.inner.clone()), };
                 }
                 let entry_ptr = ptr::NonNull::new_unchecked(head);
@@ -52,15 +54,19 @@ impl<T> Pool<T> {
                         non_null.as_ptr(),
                 };
                 match self.inner.head.compare_exchange(head, next_head, Ordering::SeqCst, Ordering::Relaxed) {
-                    Ok(..) =>
+                    Ok(..) => {
+                        println!(" ;; LEND done: retrieved from queue: {:?} (next_head = {:?}", entry_ptr, next_head);
                         return Unique {
                             inner: Inner {
                                 entry: entry_ptr,
                                 pool_head: self.inner.clone(),
                             },
-                        },
-                    Err(value) =>
-                        head = value,
+                        };
+                    },
+                    Err(value) => {
+                        println!(" ;; LEND conflict: {:?} != {:?}, trying again", head, value);
+                        head = value;
+                    },
                 }
             }
         }

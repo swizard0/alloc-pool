@@ -61,7 +61,6 @@ impl<T> Deref for Shared<T> {
 
     #[inline]
     fn deref(&self) -> &T {
-        println!("  ;;; accessing Shared::deref for {:?}", self.inner.entry);
         self.as_ref()
     }
 }
@@ -128,7 +127,6 @@ impl<T> Deref for Unique<T> {
 
     #[inline]
     fn deref(&self) -> &T {
-        println!("  ;;; accessing Unique::deref for {:?}", self.inner.entry);
         self.as_ref()
     }
 }
@@ -146,7 +144,6 @@ impl<T> AsMut<T> for Unique<T> {
 impl<T> DerefMut for Unique<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        println!("  ;;; accessing Unique::deref_mut for {:?}", self.inner.entry);
         self.as_mut()
     }
 }
@@ -189,8 +186,10 @@ impl<T> Drop for Inner<T> {
                         println!(" ;; DROPPED block entry = {:?} (next = {:?}) (returned to queue)", self.entry, next);
                         break;
                     },
-                    Err(value) =>
-                        head = value,
+                    Err(value) => {
+                        println!(" ;; dropping conflict: {:?} != {:?}, trying again", head, value);
+                        head = value;
+                    },
                 }
             }
         }
