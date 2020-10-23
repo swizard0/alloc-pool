@@ -49,6 +49,7 @@ struct Entry<T> {
 impl<T> AsRef<T> for Shared<T> {
     #[inline]
     fn as_ref(&self) -> &T {
+        println!("  ;;; accessing Shared::as_ref for {:?}", self.inner.entry);
         unsafe {
             &self.inner.entry.as_ref().value
         }
@@ -60,6 +61,7 @@ impl<T> Deref for Shared<T> {
 
     #[inline]
     fn deref(&self) -> &T {
+        println!("  ;;; accessing Shared::deref for {:?}", self.inner.entry);
         self.as_ref()
     }
 }
@@ -99,6 +101,7 @@ impl<T> Inner<T> {
         let entry = unsafe {
             ptr::NonNull::new_unchecked(Box::into_raw(entry_box))
         };
+        println!("  ;;; created new {:?}", entry);
         Inner { entry, pool_head, }
     }
 
@@ -113,6 +116,7 @@ impl<T> Inner<T> {
 impl<T> AsRef<T> for Unique<T> {
     #[inline]
     fn as_ref(&self) -> &T {
+        println!("  ;;; accessing Unique::as_ref for {:?}", self.inner.entry);
         unsafe {
             &self.inner.entry.as_ref().value
         }
@@ -124,6 +128,7 @@ impl<T> Deref for Unique<T> {
 
     #[inline]
     fn deref(&self) -> &T {
+        println!("  ;;; accessing Unique::deref for {:?}", self.inner.entry);
         self.as_ref()
     }
 }
@@ -131,6 +136,7 @@ impl<T> Deref for Unique<T> {
 impl<T> AsMut<T> for Unique<T> {
     #[inline]
     fn as_mut(&mut self) -> &mut T {
+        println!("  ;;; accessing Unique::as_mut for {:?}", self.inner.entry);
         unsafe {
             &mut self.inner.entry.as_mut().value
         }
@@ -140,6 +146,7 @@ impl<T> AsMut<T> for Unique<T> {
 impl<T> DerefMut for Unique<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
+        println!("  ;;; accessing Unique::deref_mut for {:?}", self.inner.entry);
         self.as_mut()
     }
 }
@@ -191,6 +198,7 @@ impl<T> Drop for Inner<T> {
 
 impl<T> Drop for PoolHead<T> {
     fn drop(&mut self) {
+        println!(" ;; dropping PoolHead");
         unsafe {
             // forbid entries list append
             self.is_detached.store(true, Ordering::SeqCst);
@@ -215,6 +223,7 @@ impl<T> Drop for PoolHead<T> {
                 }
             }
         }
+        println!(" ;; DROPPED PoolHead");
     }
 }
 
