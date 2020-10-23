@@ -185,7 +185,8 @@ impl<T> Drop for Inner<T> {
                 };
                 match self.pool_head.head.compare_exchange(head, self.entry.as_ptr(), Ordering::SeqCst, Ordering::Relaxed) {
                     Ok(..) => {
-                        println!(" ;; DROPPED block entry = {:?} (returned to queue)", self.entry);
+                        let next = self.entry.as_mut().next;
+                        println!(" ;; DROPPED block entry = {:?} (next = {:?}) (returned to queue)", self.entry, next);
                         break;
                     },
                     Err(value) =>
