@@ -35,7 +35,7 @@ impl<T> Clone for Shared<T> {
 
 #[derive(Debug)]
 struct Inner<T> {
-    entry: ptr::NonNull<Entry<T>>,
+    entry: Option<Box<Entry<T>>>,
     pool_head: Arc<PoolHead<T>>,
 }
 
@@ -54,9 +54,7 @@ struct Entry<T> {
 impl<T> AsRef<T> for Shared<T> {
     #[inline]
     fn as_ref(&self) -> &T {
-        unsafe {
-            &self.inner.entry.as_ref().value
-        }
+        &self.inner.entry.as_ref().unwrap().value
     }
 }
 
@@ -95,8 +93,7 @@ impl<T> Unique<T> {
 
 impl<T> Inner<T> {
     fn new(value: T, pool_head: Arc<PoolHead<T>>) -> Inner<T> {
-        let entry_box = Box::new(Entry { value, next: None, });
-        let entry = ptr::NonNull::from(Box::leak(entry_box));
+        let entry = Some(Box::new(Entry { value, next: None, }));
         Inner { entry, pool_head, }
     }
 
@@ -111,9 +108,7 @@ impl<T> Inner<T> {
 impl<T> AsRef<T> for Unique<T> {
     #[inline]
     fn as_ref(&self) -> &T {
-        unsafe {
-            &self.inner.entry.as_ref().value
-        }
+        &self.inner.entry.as_ref().unwrap().value
     }
 }
 
@@ -129,9 +124,7 @@ impl<T> Deref for Unique<T> {
 impl<T> AsMut<T> for Unique<T> {
     #[inline]
     fn as_mut(&mut self) -> &mut T {
-        unsafe {
-            &mut self.inner.entry.as_mut().value
-        }
+        &mut self.inner.entry.as_mut().unwrap().value
     }
 }
 
@@ -159,20 +152,24 @@ unsafe impl<T> Sync for Inner<T> where T: Sync {}
 
 impl<T> Drop for Inner<T> {
     fn drop(&mut self) {
-        let mut head = self.pool_head.head.load(Ordering::SeqCst);
-        loop {
-            if self.pool_head.is_detached.load(Ordering::SeqCst) {
-                // pool is detached, terminate reenqueue process and drop entry
-                let _entry = unsafe { Box::from_raw(self.entry.as_ptr()) };
-                break;
-            }
-            let next = ptr::NonNull::new(head);
-            unsafe { self.entry.as_mut().next = next; }
-            match self.pool_head.head.compare_exchange(head, self.entry.as_ptr(), Ordering::SeqCst, Ordering::Relaxed) {
-                Ok(..) =>
-                    break,
-                Err(value) =>
-                    head = value,
+        if let Some(mut entry_box) = self.entry.take() {
+            let mut head = self.pool_head.head.load(Ordering::SeqCst);
+            loop {
+                if self.pool_head.is_detached.load(Ordering::SeqCst) {
+                    // pool is detached, terminate reenqueue process and drop entry
+                    break;
+                }
+                let next = ptr::NonNull::new(head);
+                entry_box.next = next;
+                let entry = Box::leak(entry_box);
+                match self.pool_head.head.compare_exchange(head, entry as *mut _, Ordering::SeqCst, Ordering::Relaxed) {
+                    Ok(..) =>
+                        break,
+                    Err(value) => {
+                        head = value;
+                        entry_box = unsafe { Box::from_raw(entry as *mut _) };
+                    },
+                }
             }
         }
     }

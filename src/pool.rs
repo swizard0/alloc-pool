@@ -41,7 +41,7 @@ impl<T> Pool<T> {
         let head = self.inner.head.load(Ordering::SeqCst);
         let mut maybe_entry_ptr = ptr::NonNull::new(head);
         loop {
-            if let Some(mut entry_ptr) = maybe_entry_ptr {
+            if let Some(entry_ptr) = maybe_entry_ptr {
                 let next_head = match unsafe { entry_ptr.as_ref().next } {
                     None =>
                         ptr::null_mut(),
@@ -50,10 +50,11 @@ impl<T> Pool<T> {
                 };
                 match self.inner.head.compare_exchange(entry_ptr.as_ptr(), next_head, Ordering::SeqCst, Ordering::Relaxed) {
                     Ok(..) => {
-                        unsafe { entry_ptr.as_mut().next = None; }
+                        let mut entry = unsafe { Box::from_raw(entry_ptr.as_ptr()) };
+                        entry.next = None;
                         return Unique {
                             inner: Inner {
-                                entry: entry_ptr,
+                                entry: Some(entry),
                                 pool_head: self.inner.clone(),
                             },
                         };
