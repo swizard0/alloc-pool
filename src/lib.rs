@@ -79,6 +79,8 @@ impl<T> PartialEq<T> for Shared<T> where T: PartialEq {
     }
 }
 
+impl<T> Eq for Shared<T> where T: Eq { }
+
 impl<T> Unique<T> {
     pub fn new_detached(value: T) -> Self {
         Self { inner: Inner::new_detached(value), }
