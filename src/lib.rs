@@ -12,6 +12,10 @@ use std::{
         Deref,
         DerefMut,
     },
+    hash::{
+        Hash,
+        Hasher,
+    },
 };
 
 pub mod pool;
@@ -81,6 +85,12 @@ impl<T> PartialEq<T> for Shared<T> where T: PartialEq {
 
 impl<T> Eq for Shared<T> where T: Eq { }
 
+impl<T> Hash for Shared<T> where T: Hash {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_ref().hash(state);
+    }
+}
+
 impl<T> Unique<T> {
     pub fn new_detached(value: T) -> Self {
         Self { inner: Inner::new_detached(value), }
@@ -146,6 +156,12 @@ impl<T> PartialEq for Unique<T> where T: PartialEq {
 impl<T> PartialEq<T> for Unique<T> where T: PartialEq {
     fn eq(&self, other: &T) -> bool {
         self.as_ref() == other
+    }
+}
+
+impl<T> Hash for Unique<T> where T: Hash {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_ref().hash(state);
     }
 }
 
