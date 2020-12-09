@@ -171,19 +171,19 @@ unsafe impl<T> Sync for Inner<T> where T: Sync {}
 impl<T> Drop for Inner<T> {
     fn drop(&mut self) {
         if let Some(mut entry_box) = self.entry.take() {
-            let mut head = self.pool_head.head.load(Ordering::SeqCst);
+            let mut head = self.pool_head.head.load(Ordering::Acquire);
 
             let mut unhappy = false;
 
             loop {
-                if self.pool_head.is_detached.load(Ordering::SeqCst) {
+                if self.pool_head.is_detached.load(Ordering::Acquire) {
                     // pool is detached, terminate reenqueue process and drop entry
                     break;
                 }
                 let next = ptr::NonNull::new(head);
                 entry_box.next = next;
                 let entry = Box::leak(entry_box);
-                match self.pool_head.head.compare_exchange(head, entry as *mut _, Ordering::SeqCst, Ordering::SeqCst) {
+                match self.pool_head.head.compare_exchange(head, entry as *mut _, Ordering::Release, Ordering::Relaxed) {
                     Ok(..) => {
                         if unhappy {
                             println!(
