@@ -40,6 +40,9 @@ impl<T> Pool<T> {
     pub fn lend<F>(&self, make_value: F) -> Unique<T> where F: FnOnce() -> T {
         let head = self.inner.head.load(Ordering::SeqCst);
         let mut maybe_entry_ptr = ptr::NonNull::new(head);
+
+        let mut unhappy = false;
+
         loop {
             if let Some(entry_ptr) = maybe_entry_ptr {
                 let next_head = match unsafe { entry_ptr.as_ref().next } {
@@ -48,8 +51,17 @@ impl<T> Pool<T> {
                     Some(non_null) =>
                         non_null.as_ptr(),
                 };
-                match self.inner.head.compare_exchange(entry_ptr.as_ptr(), next_head, Ordering::SeqCst, Ordering::Relaxed) {
+                match self.inner.head.compare_exchange(entry_ptr.as_ptr(), next_head, Ordering::SeqCst, Ordering::SeqCst) {
                     Ok(..) => {
+
+                        if unhappy {
+                            println!(
+                                " ;; alloc_pool::pool::Pool::lend HAPPY path at last for entry_ptr = {:?}, next_head = {:?}",
+                                entry_ptr.as_ptr(),
+                                next_head,
+                            );
+                        }
+
                         let mut entry = unsafe { Box::from_raw(entry_ptr.as_ptr()) };
                         entry.next = None;
                         return Unique {
@@ -65,8 +77,9 @@ impl<T> Pool<T> {
                             " ;; alloc_pool::pool::Pool::lend unhappy path for entry_ptr = {:?}, next_ptr = {:?}, next_head = {:?}",
                             entry_ptr.as_ptr(),
                             next_ptr,
-                            next_head = next_head,
+                            next_head,
                         );
+                        unhappy = true;
 
                         maybe_entry_ptr = ptr::NonNull::new(next_ptr);
                     },

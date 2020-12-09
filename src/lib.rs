@@ -172,6 +172,9 @@ impl<T> Drop for Inner<T> {
     fn drop(&mut self) {
         if let Some(mut entry_box) = self.entry.take() {
             let mut head = self.pool_head.head.load(Ordering::SeqCst);
+
+            let mut unhappy = false;
+
             loop {
                 if self.pool_head.is_detached.load(Ordering::SeqCst) {
                     // pool is detached, terminate reenqueue process and drop entry
@@ -180,17 +183,28 @@ impl<T> Drop for Inner<T> {
                 let next = ptr::NonNull::new(head);
                 entry_box.next = next;
                 let entry = Box::leak(entry_box);
-                match self.pool_head.head.compare_exchange(head, entry as *mut _, Ordering::SeqCst, Ordering::Relaxed) {
-                    Ok(..) =>
-                        break,
+                match self.pool_head.head.compare_exchange(head, entry as *mut _, Ordering::SeqCst, Ordering::SeqCst) {
+                    Ok(..) => {
+                        if unhappy {
+                            println!(
+                                " ;; alloc_pool::Inner::Drop HAPPY path at last for head = {:?}, entry = {:?}, entry.next = {:?}",
+                                head,
+                                entry as *mut _,
+                                entry.next,
+                            );
+                        }
+                        break;
+                    },
                     Err(value) => {
 
                         println!(
-                            " ;; alloc_pool::Inner::Drop unhappy path for head = {:?}, value = {:?}, entry = {:?}",
+                            " ;; alloc_pool::Inner::Drop unhappy path for head = {:?}, value = {:?}, entry = {:?}, entry.next = {:?}",
                             head,
                             value,
                             entry as *mut _,
+                            entry.next,
                         );
+                        unhappy = true;
 
                         head = value;
                         entry_box = unsafe { Box::from_raw(entry as *mut _) };
@@ -217,7 +231,7 @@ impl<T> Drop for PoolHead<T> {
                     non_null.as_ptr(),
             };
             let entry_ptr_raw = entry_ptr.as_ptr();
-            let next_ptr = match self.head.compare_exchange(entry_ptr_raw, next_head, Ordering::SeqCst, Ordering::Relaxed) {
+            let next_ptr = match self.head.compare_exchange(entry_ptr_raw, next_head, Ordering::SeqCst, Ordering::SeqCst) {
                 Ok(entry_ptr_raw) => {
                     let _entry = unsafe { Box::from_raw(entry_ptr_raw) };
                     next_head
