@@ -59,8 +59,17 @@ impl<T> Pool<T> {
                             },
                         };
                     },
-                    Err(next_ptr) =>
-                        maybe_entry_ptr = ptr::NonNull::new(next_ptr),
+                    Err(next_ptr) => {
+
+                        println!(
+                            " ;; alloc_pool::pool::Pool::lend unhappy path for entry_ptr = {:?}, next_ptr = {:?}, next_head = {:?}",
+                            entry_ptr.as_ptr(),
+                            next_ptr,
+                            next_head = next_head,
+                        );
+
+                        maybe_entry_ptr = ptr::NonNull::new(next_ptr);
+                    },
                 }
             } else {
                 return Unique { inner: Inner::new(make_value(), self.inner.clone()), };

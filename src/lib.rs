@@ -184,6 +184,14 @@ impl<T> Drop for Inner<T> {
                     Ok(..) =>
                         break,
                     Err(value) => {
+
+                        println!(
+                            " ;; alloc_pool::Inner::Drop unhappy path for head = {:?}, value = {:?}, entry = {:?}",
+                            head,
+                            value,
+                            entry as *mut _,
+                        );
+
                         head = value;
                         entry_box = unsafe { Box::from_raw(entry as *mut _) };
                     },
@@ -215,6 +223,13 @@ impl<T> Drop for PoolHead<T> {
                     next_head
                 },
                 Err(value) => {
+
+                    println!(
+                        " ;; alloc_pool::PoolHead::Drop unhappy path for entry_ptr_raw = {:?}, value = {:?}",
+                        entry_ptr_raw,
+                        value,
+                    );
+
                     value
                 },
             };
