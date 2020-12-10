@@ -1,10 +1,12 @@
 use std::{
     ptr,
+    mem::{
+        ManuallyDrop,
+    },
     sync::{
         Arc,
         atomic::{
             Ordering,
-            AtomicPtr,
             AtomicBool,
         },
     },
@@ -17,6 +19,8 @@ use std::{
         Hasher,
     },
 };
+
+use crossbeam_epoch as epoch;
 
 pub mod pool;
 pub mod bytes;
@@ -39,26 +43,26 @@ impl<T> Clone for Shared<T> {
 
 #[derive(Debug)]
 struct Inner<T> {
-    entry: Option<Box<Entry<T>>>,
+    value: Option<T>,
     pool_head: Arc<PoolHead<T>>,
 }
 
 #[derive(Debug)]
 struct PoolHead<T> {
     is_detached: AtomicBool,
-    head: AtomicPtr<Entry<T>>,
+    head: epoch::Atomic<Entry<T>>,
 }
 
 #[derive(Debug)]
 struct Entry<T> {
-    value: T,
-    next: Option<ptr::NonNull<Entry<T>>>,
+    value: ManuallyDrop<T>,
+    next: epoch::Atomic<Entry<T>>,
 }
 
 impl<T> AsRef<T> for Shared<T> {
     #[inline]
     fn as_ref(&self) -> &T {
-        &self.inner.entry.as_ref().unwrap().value
+        self.inner.value.as_ref().unwrap()
     }
 }
 
@@ -105,22 +109,24 @@ impl<T> Unique<T> {
 
 impl<T> Inner<T> {
     fn new(value: T, pool_head: Arc<PoolHead<T>>) -> Inner<T> {
-        let entry = Some(Box::new(Entry { value, next: None, }));
-        Inner { entry, pool_head, }
+        Inner { value: Some(value), pool_head, }
     }
 
     fn new_detached(value: T) -> Inner<T> {
-        Inner::new(value, Arc::new(PoolHead {
-            is_detached: AtomicBool::new(true),
-            head: AtomicPtr::default(),
-        }))
+        Inner::new(
+            value,
+            Arc::new(PoolHead {
+                is_detached: AtomicBool::new(true),
+                head: epoch::Atomic::null(),
+            }),
+        )
     }
 }
 
 impl<T> AsRef<T> for Unique<T> {
     #[inline]
     fn as_ref(&self) -> &T {
-        &self.inner.entry.as_ref().unwrap().value
+        self.inner.value.as_ref().unwrap()
     }
 }
 
@@ -136,7 +142,7 @@ impl<T> Deref for Unique<T> {
 impl<T> AsMut<T> for Unique<T> {
     #[inline]
     fn as_mut(&mut self) -> &mut T {
-        &mut self.inner.entry.as_mut().unwrap().value
+        self.inner.value.as_mut().unwrap()
     }
 }
 
@@ -165,50 +171,31 @@ impl<T> Hash for Unique<T> where T: Hash {
     }
 }
 
-unsafe impl<T> Send for Inner<T> where T: Send {}
-unsafe impl<T> Sync for Inner<T> where T: Sync {}
+// unsafe impl<T> Send for Inner<T> where T: Send {}
+// unsafe impl<T> Sync for Inner<T> where T: Sync {}
 
 impl<T> Drop for Inner<T> {
     fn drop(&mut self) {
-        if let Some(mut entry_box) = self.entry.take() {
-            let mut head = self.pool_head.head.load(Ordering::SeqCst);
-
-            let mut unhappy = false;
-
+        if let Some(value) = self.value.take() {
+            let mut owned_entry = epoch::Owned::new(Entry {
+                value: ManuallyDrop::new(value),
+                next: epoch::Atomic::null(),
+            });
+            let guard = epoch::pin();
             loop {
                 if self.pool_head.is_detached.load(Ordering::SeqCst) {
                     // pool is detached, terminate reenqueue process and drop entry
                     break;
                 }
-                let next = ptr::NonNull::new(head);
-                entry_box.next = next;
-                let entry = Box::leak(entry_box);
-                match self.pool_head.head.compare_exchange(head, entry as *mut _, Ordering::SeqCst, Ordering::SeqCst) {
-                    Ok(..) => {
-                        if unhappy {
-                            println!(
-                                " ;; alloc_pool::Inner::Drop HAPPY path at last for head = {:?}, entry = {:?}, entry.next = {:?}",
-                                head,
-                                entry as *mut _,
-                                entry.next,
-                            );
-                        }
-                        break;
-                    },
-                    Err(value) => {
 
-                        println!(
-                            " ;; alloc_pool::Inner::Drop unhappy path for head = {:?}, value = {:?}, entry = {:?}, entry.next = {:?}",
-                            head,
-                            value,
-                            entry as *mut _,
-                            entry.next,
-                        );
-                        unhappy = true;
+                let head = self.pool_head.head.load(Ordering::Relaxed, &guard);
+                owned_entry.next.store(head, Ordering::Relaxed);
 
-                        head = value;
-                        entry_box = unsafe { Box::from_raw(entry as *mut _) };
-                    },
+                match self.pool_head.head.compare_and_set(head, owned_entry, Ordering::Release, &guard) {
+                    Ok(..) =>
+                        break,
+                    Err(error) =>
+                        owned_entry = error.new,
                 }
             }
         }
@@ -221,33 +208,24 @@ impl<T> Drop for PoolHead<T> {
         self.is_detached.store(true, Ordering::SeqCst);
 
         // drop entries
-        let head = self.head.load(Ordering::SeqCst);
-        let mut maybe_entry_ptr = ptr::NonNull::new(head);
-        while let Some(entry_ptr) = maybe_entry_ptr {
-            let next_head = match unsafe { entry_ptr.as_ref().next } {
+        let guard = epoch::pin();
+        loop {
+            let head = self.head.load(Ordering::Acquire, &guard);
+            match unsafe { head.as_ref() } {
+                Some(entry) => {
+                    let next = entry.next.load(Ordering::Relaxed, &guard);
+                    if self.head.compare_and_set(head, next, Ordering::Relaxed, &guard).is_ok() {
+                        unsafe {
+                            guard.defer_destroy(head);
+                            let _value = ManuallyDrop::into_inner(
+                                ptr::read(&(*entry).value),
+                            );
+                        }
+                    }
+                },
                 None =>
-                    ptr::null_mut(),
-                Some(non_null) =>
-                    non_null.as_ptr(),
-            };
-            let entry_ptr_raw = entry_ptr.as_ptr();
-            let next_ptr = match self.head.compare_exchange(entry_ptr_raw, next_head, Ordering::SeqCst, Ordering::SeqCst) {
-                Ok(entry_ptr_raw) => {
-                    let _entry = unsafe { Box::from_raw(entry_ptr_raw) };
-                    next_head
-                },
-                Err(value) => {
-
-                    println!(
-                        " ;; alloc_pool::PoolHead::Drop unhappy path for entry_ptr_raw = {:?}, value = {:?}",
-                        entry_ptr_raw,
-                        value,
-                    );
-
-                    value
-                },
-            };
-            maybe_entry_ptr = ptr::NonNull::new(next_ptr);
+                    break,
+            }
         }
     }
 }
