@@ -33,6 +33,13 @@ impl AsRef<BytesMutInner> for BytesMut {
     }
 }
 
+impl AsRef<Vec<u8>> for BytesMut {
+    #[inline]
+    fn as_ref(&self) -> &Vec<u8> {
+        self.unique.as_ref()
+    }
+}
+
 impl Deref for BytesMut {
     type Target = BytesMutInner;
 
@@ -46,6 +53,13 @@ impl AsMut<BytesMutInner> for BytesMut {
     #[inline]
     fn as_mut(&mut self) -> &mut BytesMutInner {
         &mut self.unique
+    }
+}
+
+impl AsMut<Vec<u8>> for BytesMut {
+    #[inline]
+    fn as_mut(&mut self) -> &mut Vec<u8> {
+        self.unique.as_mut()
     }
 }
 
