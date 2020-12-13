@@ -1,3 +1,9 @@
+use std::{
+    ops::{
+        Deref,
+        DerefMut,
+    },
+};
 
 use super::{
     pool,
@@ -6,7 +12,49 @@ use super::{
 };
 
 pub type Bytes = Shared<Vec<u8>>;
-pub type BytesMut = Unique<Vec<u8>>;
+type BytesMutInner = Unique<Vec<u8>>;
+
+#[derive(PartialEq, Hash, Debug)]
+pub struct BytesMut {
+    unique: BytesMutInner,
+}
+
+impl BytesMut {
+    pub fn freeze(mut self) -> Bytes {
+        self.unique.shrink_to_fit();
+        self.unique.freeze()
+    }
+}
+
+impl AsRef<BytesMutInner> for BytesMut {
+    #[inline]
+    fn as_ref(&self) -> &BytesMutInner {
+        &self.unique
+    }
+}
+
+impl Deref for BytesMut {
+    type Target = BytesMutInner;
+
+    #[inline]
+    fn deref(&self) -> &BytesMutInner {
+        self.as_ref()
+    }
+}
+
+impl AsMut<BytesMutInner> for BytesMut {
+    #[inline]
+    fn as_mut(&mut self) -> &mut BytesMutInner {
+        &mut self.unique
+    }
+}
+
+impl DerefMut for BytesMut {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut BytesMutInner {
+        self.as_mut()
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct BytesPool {
@@ -21,6 +69,6 @@ impl BytesPool {
     pub fn lend(&self) -> BytesMut {
         let mut bytes = self.pool.lend(Vec::new);
         bytes.clear();
-        bytes
+        BytesMut { unique: bytes, }
     }
 }
