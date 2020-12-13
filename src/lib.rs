@@ -176,28 +176,28 @@ impl<T> Hash for Unique<T> where T: Hash {
 
 impl<T> Drop for Inner<T> {
     fn drop(&mut self) {
-        if let Some(value) = self.value.take() {
-            let mut owned_entry = epoch::Owned::new(Entry {
-                value: ManuallyDrop::new(value),
-                next: epoch::Atomic::null(),
-            });
-            let guard = epoch::pin();
-            loop {
-                if self.pool_head.is_detached.load(Ordering::SeqCst) {
-                    // pool is detached, terminate reenqueue process and drop entry
-                    break;
-                }
+        if let Some(_value) = self.value.take() {
+            // let mut owned_entry = epoch::Owned::new(Entry {
+            //     value: ManuallyDrop::new(value),
+            //     next: epoch::Atomic::null(),
+            // });
+            // let guard = epoch::pin();
+            // loop {
+            //     if self.pool_head.is_detached.load(Ordering::SeqCst) {
+            //         // pool is detached, terminate reenqueue process and drop entry
+            //         break;
+            //     }
 
-                let head = self.pool_head.head.load(Ordering::Relaxed, &guard);
-                owned_entry.next.store(head, Ordering::Relaxed);
+            //     let head = self.pool_head.head.load(Ordering::Relaxed, &guard);
+            //     owned_entry.next.store(head, Ordering::Relaxed);
 
-                match self.pool_head.head.compare_and_set(head, owned_entry, Ordering::Release, &guard) {
-                    Ok(..) =>
-                        break,
-                    Err(error) =>
-                        owned_entry = error.new,
-                }
-            }
+            //     match self.pool_head.head.compare_and_set(head, owned_entry, Ordering::Release, &guard) {
+            //         Ok(..) =>
+            //             break,
+            //         Err(error) =>
+            //             owned_entry = error.new,
+            //     }
+            // }
         }
     }
 }
