@@ -1,12 +1,12 @@
 use std::{
-    // ptr,
-    // mem::{
-    //     ManuallyDrop,
-    // },
+    ptr,
+    mem::{
+        ManuallyDrop,
+    },
     sync::{
         Arc,
         atomic::{
-            // Ordering,
+            Ordering,
             AtomicBool,
         },
     },
@@ -42,27 +42,25 @@ impl<T> Pool<T> {
     }
 
     pub fn lend<F>(&self, make_value: F) -> Unique<T> where F: FnOnce() -> T {
-        Unique { inner: Inner::new_detached(make_value()), }
-
-        // let guard = epoch::pin();
-        // loop {
-        //     let head = self.inner.head.load(Ordering::Acquire, &guard);
-        //     match unsafe { head.as_ref() } {
-        //         Some(entry) => {
-        //             let next = entry.next.load(Ordering::Relaxed, &guard);
-        //             if self.inner.head.compare_and_set(head, next, Ordering::Relaxed, &guard).is_ok() {
-        //                 unsafe {
-        //                     guard.defer_destroy(head);
-        //                     let value = ManuallyDrop::into_inner(
-        //                         ptr::read(&(*entry).value),
-        //                     );
-        //                     return Unique { inner: Inner::new(value, self.inner.clone()), };
-        //                 }
-        //             }
-        //         },
-        //         None =>
-        //             return Unique { inner: Inner::new(make_value(), self.inner.clone()), },
-        //     }
-        // }
+        let guard = epoch::pin();
+        loop {
+            let head = self.inner.head.load(Ordering::Acquire, &guard);
+            match unsafe { head.as_ref() } {
+                Some(entry) => {
+                    let next = entry.next.load(Ordering::Relaxed, &guard);
+                    if self.inner.head.compare_and_set(head, next, Ordering::Relaxed, &guard).is_ok() {
+                        unsafe {
+                            guard.defer_destroy(head);
+                            let value = ManuallyDrop::into_inner(
+                                ptr::read(&(*entry).value),
+                            );
+                            return Unique { inner: Inner::new(value, self.inner.clone()), };
+                        }
+                    }
+                },
+                None =>
+                    return Unique { inner: Inner::new(make_value(), self.inner.clone()), },
+            }
+        }
     }
 }

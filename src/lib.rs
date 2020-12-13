@@ -171,9 +171,6 @@ impl<T> Hash for Unique<T> where T: Hash {
     }
 }
 
-// unsafe impl<T> Send for Inner<T> where T: Send {}
-// unsafe impl<T> Sync for Inner<T> where T: Sync {}
-
 impl<T> Drop for Inner<T> {
     fn drop(&mut self) {
         if let Some(value) = self.value.take() {
