@@ -20,6 +20,10 @@ pub struct BytesMut {
 }
 
 impl BytesMut {
+    pub fn new_detached(value: Vec<u8>) -> Self {
+        Self { unique: BytesMutInner::new_detached(value), }
+    }
+
     pub fn freeze(mut self) -> Bytes {
         self.unique.shrink_to_fit();
         self.unique.freeze()
