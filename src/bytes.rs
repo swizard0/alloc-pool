@@ -40,38 +40,7 @@ impl BytesMut {
     }
 
     pub fn freeze_range<R>(self, range: R) -> Bytes where R: RangeBounds<usize> {
-        let mut bytes = self.freeze();
-        match range.start_bound() {
-            Bound::Unbounded =>
-                (),
-            Bound::Included(&offset) if offset <= bytes.offset_to =>
-                bytes.offset_from = offset,
-            Bound::Included(offset) =>
-                panic!("BytesMut::freeze_range start offset = {} greater than slice length {}", offset, bytes.offset_to),
-            Bound::Excluded(..) =>
-                unreachable!(),
-        }
-        match range.end_bound() {
-            Bound::Unbounded =>
-                (),
-            Bound::Included(&offset) if offset < bytes.offset_to =>
-                bytes.offset_to = offset + 1,
-            Bound::Included(offset) =>
-                panic!(
-                    "BytesMut::freeze_range included end offset = {} greater or equal than slice length {}",
-                    offset,
-                    bytes.offset_to,
-                ),
-            Bound::Excluded(&offset) if offset <= bytes.offset_to =>
-                bytes.offset_to = offset,
-            Bound::Excluded(offset) =>
-                panic!(
-                    "BytesMut::freeze_range excluded end offset = {} greater than slice length {}",
-                    offset,
-                    bytes.offset_to,
-                ),
-        }
-        bytes
+        self.freeze().subrange(range)
     }
 }
 
@@ -156,6 +125,50 @@ impl Hash for Bytes {
     }
 }
 
+impl Bytes {
+    pub fn subrange<R>(&self, range: R) -> Bytes where R: RangeBounds<usize> {
+        let mut bytes = self.clone();
+        match range.start_bound() {
+            Bound::Unbounded =>
+                (),
+            Bound::Included(&offset) if offset + self.offset_from <= self.offset_to =>
+                bytes.offset_from = offset + self.offset_from,
+            Bound::Included(offset) =>
+                panic!(
+                    "Bytes::subrange start offset = {} not in range [{}, {}]",
+                    offset,
+                    0,
+                    self.offset_to - self.offset_from,
+                ),
+            Bound::Excluded(..) =>
+                unreachable!(),
+        }
+        match range.end_bound() {
+            Bound::Unbounded =>
+                (),
+            Bound::Included(&offset) if offset + self.offset_from >= bytes.offset_from && offset + self.offset_from < self.offset_to =>
+                bytes.offset_to = offset + self.offset_from + 1,
+            Bound::Included(offset) =>
+                panic!(
+                    "Bytes::subrange included end offset = {} not in range [{}, {})",
+                    offset,
+                    bytes.offset_from - self.offset_from,
+                    self.offset_to - self.offset_from,
+                ),
+            Bound::Excluded(&offset) if offset + self.offset_from >= bytes.offset_from && offset + self.offset_from <= self.offset_to =>
+                bytes.offset_to = offset + self.offset_from,
+            Bound::Excluded(offset) =>
+                panic!(
+                    "Bytes::subrange excluded end offset = {} not in range [{}, {}]",
+                    offset,
+                    bytes.offset_from - self.offset_from,
+                    self.offset_to - self.offset_from,
+                ),
+        }
+        bytes
+    }
+}
+
 
 #[derive(Clone, Debug)]
 pub struct BytesPool {
@@ -227,5 +240,53 @@ mod tests {
     fn freeze_range_05() {
         let _bytes = BytesMut::new_detached(vec![0, 1, 2, 3, 4])
             .freeze_range(.. 6);
+    }
+
+    #[test]
+    fn freeze_subrange_00() {
+        let bytes = BytesMut::new_detached(vec![0, 1, 2, 3, 4])
+            .freeze_range(.. 3)
+            .subrange(1 ..);
+        assert_eq!(&*bytes, &[1, 2]);
+    }
+
+    #[test]
+    fn freeze_subrange_01() {
+        let bytes = BytesMut::new_detached(vec![0, 1, 2, 3, 4])
+            .freeze_range(..= 3)
+            .subrange(2 ..= 2);
+        assert_eq!(&*bytes, &[2]);
+    }
+
+    #[test]
+    fn freeze_subrange_02() {
+        let bytes = BytesMut::new_detached(vec![0, 1, 2, 3, 4])
+            .freeze_range(2 ..)
+            .subrange(3 ..);
+        assert_eq!(&*bytes, &[]);
+    }
+
+    #[test]
+    fn freeze_subrange_03() {
+        let bytes = BytesMut::new_detached(vec![0, 1, 2, 3, 4])
+            .freeze_range(2 .. 4)
+            .subrange(.. 1);
+        assert_eq!(&*bytes, &[2]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn freeze_subrange_04() {
+        let _bytes = BytesMut::new_detached(vec![0, 1, 2, 3, 4])
+            .freeze_range(2 ..= 3)
+            .subrange(3 ..);
+    }
+
+    #[test]
+    #[should_panic]
+    fn freeze_subrange_05() {
+        let _bytes = BytesMut::new_detached(vec![0, 1, 2, 3, 4])
+            .freeze_range(1 .. 4)
+            .subrange(1 ..= 3);
     }
 }
