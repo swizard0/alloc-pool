@@ -167,6 +167,20 @@ impl Bytes {
         }
         bytes
     }
+
+    pub fn clone_subslice<'a>(&'a self, slice: &'a [u8]) -> Bytes {
+        // safe because both the starting and other pointer are either in bounds or one
+        // byte past the end of the same allocated object (checked by two asserts)
+        unsafe {
+            let ptr_range = self.inner.as_ptr_range();
+            let slice_ptr = slice.as_ptr();
+            assert!(ptr_range.contains(&slice_ptr));
+            assert!(ptr_range.contains(&slice_ptr.add(slice.len())));
+            let offset_from = slice_ptr.offset_from(self.inner.as_ptr()) as usize;
+            let offset_to = offset_from + slice.len();
+            self.subrange(offset_from .. offset_to)
+        }
+    }
 }
 
 
