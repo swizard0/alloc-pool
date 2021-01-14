@@ -178,7 +178,13 @@ impl Bytes {
             assert!(ptr_range.contains(&slice_ptr.add(slice.len())));
             let offset_from = slice_ptr.offset_from(self.inner.as_ptr()) as usize;
             let offset_to = offset_from + slice.len();
-            self.subrange(offset_from .. offset_to)
+            assert!(offset_from >= self.offset_from);
+            assert!(offset_to <= self.offset_to);
+            Bytes {
+                inner: self.inner.clone(),
+                offset_from,
+                offset_to,
+            }
         }
     }
 }
@@ -302,5 +308,40 @@ mod tests {
         let _bytes = BytesMut::new_detached(vec![0, 1, 2, 3, 4])
             .freeze_range(1 .. 4)
             .subrange(1 ..= 3);
+    }
+
+    #[test]
+    fn clone_subslice_00() {
+        let bytes = BytesMut::new_detached(vec![0, 1, 2, 3, 4])
+            .freeze();
+        let subslice = &bytes[2 .. 4];
+        let bytes_cloned = bytes.clone_subslice(subslice);
+        assert_eq!(&*bytes_cloned, &[2, 3]);
+    }
+
+    #[test]
+    fn clone_subslice_01() {
+        let bytes = BytesMut::new_detached(vec![0, 1, 2, 3, 4])
+            .freeze();
+        let subslice = &bytes[1 .. 4];
+        let bytes_cloned_a = bytes.clone_subslice(subslice);
+        assert_eq!(&*bytes_cloned_a, &[1, 2, 3]);
+        let bytes_cloned_b = bytes_cloned_a.clone_subslice(&subslice[1 ..]);
+        assert_eq!(&*bytes_cloned_b, &[2, 3]);
+        let bytes_cloned_c = bytes_cloned_b.clone_subslice(&subslice[1 .. 2]);
+        assert_eq!(&*bytes_cloned_c, &[2]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn clone_subslice_02() {
+        let bytes = BytesMut::new_detached(vec![0, 1, 2, 3, 4])
+            .freeze();
+        let subslice = &bytes[1 .. 4];
+        let bytes_cloned_a = bytes.clone_subslice(subslice);
+        assert_eq!(&*bytes_cloned_a, &[1, 2, 3]);
+        let bytes_cloned_b = bytes_cloned_a.clone_subslice(&subslice[1 ..]);
+        assert_eq!(&*bytes_cloned_b, &[2, 3]);
+        let _bytes_cloned_c = bytes_cloned_b.clone_subslice(subslice);
     }
 }
