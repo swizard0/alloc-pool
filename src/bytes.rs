@@ -192,18 +192,42 @@ impl Bytes {
 
 #[derive(Clone, Debug)]
 pub struct BytesPool {
-    pool: pool::Pool<Vec<u8>>,
+    kind: BytesPoolKind,
+}
+
+#[derive(Clone, Debug)]
+enum BytesPoolKind {
+    Attached {
+        pool: pool::Pool<Vec<u8>>,
+    },
+    Detached,
 }
 
 impl BytesPool {
     pub fn new() -> BytesPool {
-        BytesPool { pool: pool::Pool::new(), }
+        BytesPool {
+            kind: BytesPoolKind::Attached {
+                pool: pool::Pool::new(),
+            },
+        }
+    }
+
+    pub fn new_detached() -> BytesPool {
+        BytesPool {
+            kind: BytesPoolKind::Detached,
+        }
     }
 
     pub fn lend(&self) -> BytesMut {
-        let mut bytes = self.pool.lend(Vec::new);
-        bytes.clear();
-        BytesMut { unique: bytes, }
+        match &self.kind {
+            BytesPoolKind::Attached { pool, } => {
+                let mut bytes = pool.lend(Vec::new);
+                bytes.clear();
+                BytesMut { unique: bytes, }
+            },
+            BytesPoolKind::Detached =>
+                BytesMut::new_detached(Vec::new()),
+        }
     }
 }
 
