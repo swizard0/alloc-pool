@@ -48,7 +48,7 @@ impl<T> Pool<T> {
             match unsafe { head.as_ref() } {
                 Some(entry) => {
                     let next = entry.next.load(Ordering::Relaxed, &guard);
-                    if self.inner.head.compare_and_set(head, next, Ordering::Relaxed, &guard).is_ok() {
+                    if self.inner.head.compare_exchange(head, next, Ordering::Relaxed, Ordering::Relaxed, &guard).is_ok() {
                         unsafe {
                             guard.defer_destroy(head);
                             let value = ManuallyDrop::into_inner(

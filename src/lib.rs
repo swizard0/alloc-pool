@@ -192,7 +192,7 @@ impl<T> Drop for Inner<T> {
                 let head = self.pool_head.head.load(Ordering::Relaxed, &guard);
                 owned_entry.next.store(head, Ordering::Relaxed);
 
-                match self.pool_head.head.compare_and_set(head, owned_entry, Ordering::Release, &guard) {
+                match self.pool_head.head.compare_exchange(head, owned_entry, Ordering::Release, Ordering::Relaxed, &guard) {
                     Ok(..) =>
                         break,
                     Err(error) =>
@@ -215,7 +215,7 @@ impl<T> Drop for PoolHead<T> {
             match unsafe { head.as_ref() } {
                 Some(entry) => {
                     let next = entry.next.load(Ordering::Relaxed, &guard);
-                    if self.head.compare_and_set(head, next, Ordering::Relaxed, &guard).is_ok() {
+                    if self.head.compare_exchange(head, next, Ordering::Relaxed, Ordering::Relaxed, &guard).is_ok() {
                         unsafe {
                             guard.defer_destroy(head);
                             let _value = ManuallyDrop::into_inner(
