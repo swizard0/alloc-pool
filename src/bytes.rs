@@ -175,7 +175,7 @@ impl Bytes {
             let ptr_range = self.inner.as_ptr_range();
             let slice_ptr = slice.as_ptr();
             assert!(ptr_range.contains(&slice_ptr));
-            assert!(ptr_range.contains(&slice_ptr.add(slice.len())));
+            assert!(ptr_range.end >= slice_ptr.add(slice.len()));
             let offset_from = slice_ptr.offset_from(self.inner.as_ptr()) as usize;
             let offset_to = offset_from + slice.len();
             assert!(offset_from >= self.offset_from);
