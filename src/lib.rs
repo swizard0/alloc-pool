@@ -47,6 +47,12 @@ impl<T> Clone for Shared<T> {
     }
 }
 
+impl<T> Clone for WeakShared<T> {
+    fn clone(&self) -> WeakShared<T> {
+        WeakShared { inner: self.inner.clone(), }
+    }
+}
+
 #[derive(Debug)]
 struct Inner<T> {
     value: Option<T>,

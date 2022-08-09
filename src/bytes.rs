@@ -97,7 +97,7 @@ pub struct Bytes {
     offset_to: usize,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BytesWeak {
     inner: BytesWeakInner,
     offset_from: usize,
