@@ -17,10 +17,12 @@ use super::{
     pool,
     Shared,
     Unique,
+    WeakShared,
 };
 
 type BytesInner = Shared<Vec<u8>>;
 type BytesMutInner = Unique<Vec<u8>>;
+type BytesWeakInner = WeakShared<Vec<u8>>;
 
 #[derive(PartialEq, Hash, Debug)]
 pub struct BytesMut {
@@ -95,6 +97,13 @@ pub struct Bytes {
     offset_to: usize,
 }
 
+#[derive(Debug)]
+pub struct BytesWeak {
+    inner: BytesWeakInner,
+    offset_from: usize,
+    offset_to: usize,
+}
+
 impl AsRef<[u8]> for Bytes {
     #[inline]
     fn as_ref(&self) -> &[u8] {
@@ -126,6 +135,14 @@ impl Hash for Bytes {
 }
 
 impl Bytes {
+    pub fn downgrade(&self) -> BytesWeak {
+        BytesWeak {
+            inner: self.inner.downgrade(),
+            offset_from: self.offset_from,
+            offset_to: self.offset_to,
+        }
+    }
+
     pub fn subrange<R>(&self, range: R) -> Bytes where R: RangeBounds<usize> {
         let mut bytes = self.clone();
         match range.start_bound() {
@@ -186,6 +203,17 @@ impl Bytes {
                 offset_to,
             }
         }
+    }
+}
+
+impl BytesWeak {
+    pub fn upgrade(&self) -> Option<Bytes> {
+        self.inner.upgrade()
+            .map(|arc| Bytes {
+                inner: arc,
+                offset_from: self.offset_from,
+                offset_to: self.offset_to,
+            })
     }
 }
 

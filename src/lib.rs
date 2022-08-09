@@ -5,6 +5,7 @@ use std::{
     },
     sync::{
         Arc,
+        Weak,
         atomic::{
             Ordering,
             AtomicBool,
@@ -33,6 +34,11 @@ pub struct Unique<T> {
 #[derive(Debug)]
 pub struct Shared<T> {
     inner: Arc<Inner<T>>,
+}
+
+#[derive(Debug)]
+pub struct WeakShared<T> {
+    inner: Weak<Inner<T>>,
 }
 
 impl<T> Clone for Shared<T> {
@@ -92,6 +98,21 @@ impl<T> Eq for Shared<T> where T: Eq { }
 impl<T> Hash for Shared<T> where T: Hash {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.as_ref().hash(state);
+    }
+}
+
+impl<T> Shared<T> {
+    pub fn downgrade(&self) -> WeakShared<T> {
+        WeakShared {
+            inner: Arc::downgrade(&self.inner),
+        }
+    }
+}
+
+impl<T> WeakShared<T> {
+    pub fn upgrade(&self) -> Option<Shared<T>> {
+        self.inner.upgrade()
+            .map(|arc| Shared { inner: arc, })
     }
 }
 
