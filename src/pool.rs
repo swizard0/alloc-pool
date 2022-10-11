@@ -31,6 +31,12 @@ impl<T> Clone for Pool<T> {
     }
 }
 
+impl<T> Default for Pool<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> Pool<T> {
     pub fn new() -> Pool<T> {
         Pool {

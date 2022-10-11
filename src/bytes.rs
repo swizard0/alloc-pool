@@ -231,6 +231,12 @@ enum BytesPoolKind {
     Detached,
 }
 
+impl Default for BytesPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BytesPool {
     pub fn new() -> BytesPool {
         BytesPool {
