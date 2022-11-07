@@ -191,7 +191,7 @@ impl Bytes {
         unsafe {
             let ptr_range = self.inner.as_ptr_range();
             let slice_ptr = slice.as_ptr();
-            assert!(ptr_range.is_empty() || ptr_range.contains(&slice_ptr));
+            assert!(ptr_range.contains(&slice_ptr) || (slice.is_empty() && slice_ptr == ptr_range.end));
             assert!(ptr_range.end >= slice_ptr.add(slice.len()));
             let offset_from = slice_ptr.offset_from(self.inner.as_ptr()) as usize;
             let offset_to = offset_from + slice.len();
@@ -408,6 +408,15 @@ mod tests {
         let bytes = BytesMut::new_detached(vec![])
             .freeze();
         let subslice = &bytes[0 .. 0];
+        let bytes_cloned = bytes.clone_subslice(subslice);
+        assert_eq!(&*bytes_cloned, &[]);
+    }
+
+    #[test]
+    fn clone_subslice_04() {
+        let bytes = BytesMut::new_detached(vec![0, 1, 2])
+            .freeze();
+        let subslice = &bytes[3 .. 3];
         let bytes_cloned = bytes.clone_subslice(subslice);
         assert_eq!(&*bytes_cloned, &[]);
     }
