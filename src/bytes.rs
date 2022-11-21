@@ -144,18 +144,23 @@ impl Bytes {
     }
 
     pub fn subrange<R>(&self, range: R) -> Bytes where R: RangeBounds<usize> {
-        let mut bytes = self.clone();
+        self.clone().into_subrange(range)
+    }
+
+    pub fn into_subrange<R>(mut self, range: R) -> Bytes where R: RangeBounds<usize> {
+        let self_offset_from = self.offset_from;
+        let self_offset_to = self.offset_to;
         match range.start_bound() {
             Bound::Unbounded =>
                 (),
-            Bound::Included(&offset) if offset + self.offset_from <= self.offset_to =>
-                bytes.offset_from = offset + self.offset_from,
+            Bound::Included(&offset) if offset + self_offset_from <= self_offset_to =>
+                self.offset_from = offset + self_offset_from,
             Bound::Included(offset) =>
                 panic!(
                     "Bytes::subrange start offset = {} not in range [{}, {}]",
                     offset,
                     0,
-                    self.offset_to - self.offset_from,
+                    self_offset_to - self_offset_from,
                 ),
             Bound::Excluded(..) =>
                 unreachable!(),
@@ -163,26 +168,26 @@ impl Bytes {
         match range.end_bound() {
             Bound::Unbounded =>
                 (),
-            Bound::Included(&offset) if offset + self.offset_from >= bytes.offset_from && offset + self.offset_from < self.offset_to =>
-                bytes.offset_to = offset + self.offset_from + 1,
+            Bound::Included(&offset) if offset + self_offset_from >= self.offset_from && offset + self_offset_from < self_offset_to =>
+                self.offset_to = offset + self_offset_from + 1,
             Bound::Included(offset) =>
                 panic!(
                     "Bytes::subrange included end offset = {} not in range [{}, {})",
                     offset,
-                    bytes.offset_from - self.offset_from,
-                    self.offset_to - self.offset_from,
+                    self.offset_from - self_offset_from,
+                    self_offset_to - self_offset_from,
                 ),
-            Bound::Excluded(&offset) if offset + self.offset_from >= bytes.offset_from && offset + self.offset_from <= self.offset_to =>
-                bytes.offset_to = offset + self.offset_from,
+            Bound::Excluded(&offset) if offset + self_offset_from >= self.offset_from && offset + self_offset_from <= self_offset_to =>
+                self.offset_to = offset + self_offset_from,
             Bound::Excluded(offset) =>
                 panic!(
                     "Bytes::subrange excluded end offset = {} not in range [{}, {}]",
                     offset,
-                    bytes.offset_from - self.offset_from,
-                    self.offset_to - self.offset_from,
+                    self.offset_from - self_offset_from,
+                    self_offset_to - self_offset_from,
                 ),
         }
-        bytes
+        self
     }
 
     pub fn clone_subslice<'a>(&'a self, slice: &'a [u8]) -> Bytes {
