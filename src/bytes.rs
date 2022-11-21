@@ -148,6 +148,11 @@ impl Bytes {
     }
 
     pub fn into_subrange<R>(mut self, range: R) -> Bytes where R: RangeBounds<usize> {
+        self.focus_subrange(range);
+        self
+    }
+
+    pub fn focus_subrange<R>(&mut self, range: R) where R: RangeBounds<usize> {
         let self_offset_from = self.offset_from;
         let self_offset_to = self.offset_to;
         match range.start_bound() {
@@ -187,7 +192,6 @@ impl Bytes {
                     self_offset_to - self_offset_from,
                 ),
         }
-        self
     }
 
     pub fn clone_subslice<'a>(&'a self, slice: &'a [u8]) -> Bytes {
