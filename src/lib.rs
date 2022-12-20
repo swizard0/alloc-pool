@@ -246,7 +246,7 @@ impl<T> Drop for PoolHead<T> {
                         unsafe {
                             guard.defer_destroy(head);
                             let _value = ManuallyDrop::into_inner(
-                                ptr::read(&(*entry).value),
+                                ptr::read(&entry.value),
                             );
                         }
                     }

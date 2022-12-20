@@ -58,7 +58,7 @@ impl<T> Pool<T> {
                         unsafe {
                             guard.defer_destroy(head);
                             let value = ManuallyDrop::into_inner(
-                                ptr::read(&(*entry).value),
+                                ptr::read(&entry.value),
                             );
                             return Unique { inner: Inner::new(value, self.inner.clone()), };
                         }
