@@ -14,7 +14,7 @@ use std::{
 
 use crossbeam_epoch as epoch;
 
-use super::{
+use crate::{
     Inner,
     Unique,
     PoolHead,
